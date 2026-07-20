@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window 
+    x:Class="SpeechToTxtAI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:SpeechToTxtAI"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Voice Recorder">
+
+    <Grid Padding="12" Background="Transparent" >
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="V" Modifiers="Control" Invoked="ClearAccelerator_Invoked"/>
+        </Grid.KeyboardAccelerators>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Background="Transparent" Spacing="12">
+            
+            <!-- Circular Record Button -->
+            <Button x:Name="BtnRecord" 
+                    Click="BtnRecord_Click" 
+                    HorizontalAlignment="Center"
+                    Width="80" Height="80"
+                    CornerRadius="40"
+                    Padding="0">
+                <Grid>
+                    <!-- Microphone Icon (not recording) -->
+                    <FontIcon x:Name="IconMic" 
+                              Glyph="&#xE720;" 
+                              FontSize="32"
+                              Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    <!-- Stop Icon (recording) -->
+                    <FontIcon x:Name="IconStop" 
+                              Glyph="&#xE71A;" 
+                              FontSize="32"
+                              Foreground="Red"
+                              Visibility="Collapsed"/>
+                </Grid>
+            </Button>
+
+            <!-- Status indicator -->
+            <TextBlock x:Name="TxtStatus" 
+                       Text="Uruchamianie..." 
+                       HorizontalAlignment="Center"
+                       FontSize="12"
+                       Opacity="0.7"/>
+            
+            <!-- Result text area -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8"
+                    Padding="12"
+                    MinWidth="250"
+                    MaxWidth="350"
+                    Height="240">
+                <ScrollViewer x:Name="ResultScroll" MaxHeight="216" VerticalScrollBarVisibility="Auto">
+                    <TextBlock x:Name="TxtResult" 
+                               TextWrapping="Wrap" 
+                               FontSize="14"
+                               IsTextSelectionEnabled="True"/>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Copy button -->
+            <Button x:Name="BtnCopy" 
+                    Click="BtnCopy_Click"
+                    HorizontalAlignment="Center"
+                    Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE8C8;" FontSize="14"/>
+                    <TextBlock Text="Kopiuj"/>
+                </StackPanel>
+            </Button>
+
+            <!-- ==================== Ustawienia ==================== -->
+            <Border Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                    Height="1" Margin="0,4"/>
+
+            <CheckBox x:Name="ChkAutoCopy"
+                      Content="Kopiuj tekst do schowka automatycznie"
+                      Click="ChkAutoCopy_Click"
+                      HorizontalAlignment="Center"
+                      FontSize="12"/>
+
+            <StackPanel Spacing="2" HorizontalAlignment="Stretch">
+                <TextBlock x:Name="TxtSilenceLabel"
+                           Text="Czas pauzy: 800 ms"
+                           HorizontalAlignment="Center"
+                           FontSize="12" Opacity="0.7"/>
+                <Slider x:Name="SliderSilence"
+                        Minimum="300" Maximum="3000"
+                        StepFrequency="100"
+                        TickFrequency="300"
+                        Value="1200"
+                        Width="300"
+                        ValueChanged="SliderSilence_ValueChanged"/>
+                <TextBlock Text="krócej = szybciej reaguje | dłużej = nie ucina zdań"
+                           HorizontalAlignment="Center"
+                           FontSize="10" Opacity="0.5"/>
+            </StackPanel>
+
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "SpeechToTxtAI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "SpeechToTxtAI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

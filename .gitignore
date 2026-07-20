@@ -361,3 +361,16 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/SpeechToTxtAIWinUI/tiny-decoder.onnx
+/SpeechToTxtAIWinUI/tiny-encoder.onnx
+/SpeechToTxtAIWinUI/tiny-decoder.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/bpe.model
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/decoder-epoch-99-avg-1-chunk-16-left-128.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/encoder-epoch-99-avg-1-chunk-16-left-128.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/export-onnx-zipformer-online.sh
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/joiner-epoch-99-avg-1-chunk-16-left-128.onnx
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/README.md
+/SpeechToTxtAIWinUI/sherpa-onnx-streaming-zipformer-en-2023-06-26/test_wavs/0.wav

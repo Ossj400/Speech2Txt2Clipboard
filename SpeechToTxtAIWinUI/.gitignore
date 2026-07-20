@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/bin
+/Properties/PublishProfiles
+/obj
+/sherpa-onnx-streaming-zipformer-en-2023-06-26
