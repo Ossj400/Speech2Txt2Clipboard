@@ -42,6 +42,11 @@ Serwer modelu (FastAPI) nasłuchuje na `http://127.0.0.1:8760`.
 Dwuklik na `Z:\models\MOSS-Transcribe-Diarize\serve_moss.bat`.
 Poczekaj na komunikat `Model zaladowany`.
 
+Przy normalnym zamknięciu okna aplikacja zatrzymuje serwer, który sama uruchomiła,
+wraz z jego procesami potomnymi. Serwer uruchomiony wcześniej ręcznie pozostaje
+uruchomiony. Serwer uruchomiony przez aplikację jest również zatrzymywany przez
+Windows po wymuszonym zakończeniu aplikacji, np. po zatrzymaniu debugowania.
+
 ---
 
 ## Budowanie

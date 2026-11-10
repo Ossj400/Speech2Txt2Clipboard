@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -24,6 +25,8 @@ namespace SpeechToTextAI;
 public sealed class MossTranscriptionService : IDisposable
 {
     private readonly HttpClient _http;
+    private readonly object _processLock = new();
+    private OwnedServerProcess? _serverProcess;
     private bool _disposed;
 
     public string BaseUrl { get; }
@@ -76,12 +79,22 @@ public sealed class MossTranscriptionService : IDisposable
     {
         try
         {
-            using var resp = await _http.GetAsync($"{BaseUrl}/health", ct);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
+            using var resp = await _http.GetAsync($"{BaseUrl}/health", timeoutCts.Token);
             if (!resp.IsSuccessStatusCode) return false;
-            var health = await resp.Content.ReadFromJsonAsync<HealthResponse>(cancellationToken: ct);
+            var health = await resp.Content.ReadFromJsonAsync<HealthResponse>(cancellationToken: timeoutCts.Token);
             return health is { ModelLoaded: true };
         }
-        catch
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (JsonException)
         {
             return false;
         }
@@ -109,31 +122,48 @@ public sealed class MossTranscriptionService : IDisposable
         if (await IsServerReadyAsync(ct))
             return true;
 
-        // 2) Sprobuj uruchomic .bat
-        if (!File.Exists(ServerBatPath))
+        // Nie uruchamiaj kolejnego modelu, jesli proces juz zajal port,
+        // nawet gdy model nadal sie laduje albo jego endpoint chwilowo nie odpowiada.
+        if (!await IsServerListeningAsync(ct))
         {
-            progress?.Invoke($"Nie znaleziono: {ServerBatPath}");
-            return false;
-        }
-
-        progress?.Invoke("Uruchamiam serwer MOSS...");
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
+            // 2) Sprobuj uruchomic .bat
+            if (!File.Exists(ServerBatPath))
             {
-                FileName = "cmd.exe",
-                Arguments = $"/c \"{ServerBatPath}\"",
-                WorkingDirectory = Path.GetDirectoryName(ServerBatPath) ?? ".",
-                UseShellExecute = true,        // wlasne okno konsoli serwera
-                CreateNoWindow = false,
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Minimized
-            };
-            System.Diagnostics.Process.Start(psi);
+                progress?.Invoke($"Nie znaleziono: {ServerBatPath}");
+                return false;
+            }
+
+            progress?.Invoke("Uruchamiam serwer MOSS...");
+            try
+            {
+                lock (_processLock)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    ObjectDisposedException.ThrowIf(_disposed, this);
+                    if (_serverProcess == null || _serverProcess.HasExited)
+                    {
+                        _serverProcess?.Dispose();
+                        _serverProcess = OwnedServerProcess.Start(ServerBatPath);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException) when (ct.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(ct);
+            }
+            catch (Exception ex)
+            {
+                progress?.Invoke($"Nie udalo sie uruchomic serwera: {ex.Message}");
+                return false;
+            }
         }
-        catch (Exception ex)
+        else
         {
-            progress?.Invoke($"Nie udalo sie uruchomic serwera: {ex.Message}");
-            return false;
+            progress?.Invoke("Serwer MOSS juz nasluchuje; czekam na gotowosc modelu...");
         }
 
         // 3) Czekaj az /health zwroci model_loaded=true
@@ -151,6 +181,29 @@ public sealed class MossTranscriptionService : IDisposable
 
         progress?.Invoke("Przekroczono czas oczekiwania na serwer.");
         return false;
+    }
+
+    private async Task<bool> IsServerListeningAsync(CancellationToken ct)
+    {
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri))
+            return false;
+
+        using var client = new TcpClient();
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(1));
+        try
+        {
+            await client.ConnectAsync(uri.Host, uri.Port, timeoutCts.Token);
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -261,8 +314,18 @@ public sealed class MossTranscriptionService : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        OwnedServerProcess? serverProcess;
+        lock (_processLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            serverProcess = _serverProcess;
+            _serverProcess = null;
+        }
+
         _http.Dispose();
-        _disposed = true;
+        if (serverProcess == null) return;
+
+        serverProcess.Dispose();
     }
 }

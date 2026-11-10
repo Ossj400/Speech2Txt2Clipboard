@@ -25,7 +25,9 @@ namespace SpeechToTxtAI
     public sealed partial class MainWindow : Window
     {
         private readonly MossTranscriptionService _mossService = new("http://127.0.0.1:8760");
+        private readonly CancellationTokenSource _windowLifetime = new();
         private readonly AppSettings _settings = AppSettings.Load();
+        private bool _closing;
         private bool _settingsLoaded;
         private WaveInEvent? _waveIn;
         private bool _isListening;
@@ -104,19 +106,16 @@ namespace SpeechToTxtAI
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
-            if (_isListening) StopListening();
-        }
-
-        // Ctrl+V -> wyczysc transkrypcje (start od nowa).
-        private void ClearAccelerator_Invoked(
-            Microsoft.UI.Xaml.Input.KeyboardAccelerator sender,
-            Microsoft.UI.Xaml.Input.KeyboardAcceleratorInvokedEventArgs args)
-        {
-            _fullTranscript = "";
-            TxtResult.Text = "";
-            TxtStatus.Text = _isListening ? "Słucham... (wyczyszczone)" : "Zatrzymano";
-            BtnCopy.Visibility = Visibility.Collapsed;
-            args.Handled = true;
+            _closing = true;
+            _windowLifetime.Cancel();
+            try
+            {
+                if (_isListening) StopListening(flushRemaining: false);
+            }
+            finally
+            {
+                _mossService.Dispose();
+            }
         }
 
         private void SetAlwaysOnTop()
@@ -142,8 +141,11 @@ namespace SpeechToTxtAI
             try
             {
                 _serverReady = await _mossService.EnsureServerRunningAsync(
-                    progress: msg => DispatcherQueue.TryEnqueue(() => TxtStatus.Text = msg),
-                    maxWaitSeconds: 180);
+                    progress: msg => DispatcherQueue.TryEnqueue(() => { if (!_closing) TxtStatus.Text = msg; }),
+                    maxWaitSeconds: 180,
+                    ct: _windowLifetime.Token);
+
+                if (_closing) return;
 
                 if (_serverReady)
                 {
@@ -159,8 +161,12 @@ namespace SpeechToTxtAI
                         "Sprawdz: Z:\\models\\MOSS-Transcribe-Diarize\\serve_moss.bat";
                 }
             }
+            catch (OperationCanceledException) when (_closing)
+            {
+            }
             catch (Exception ex)
             {
+                if (_closing) return;
                 TxtStatus.Text = "Blad inicjalizacji";
                 TxtResult.Text = ex.Message;
             }
@@ -188,18 +194,28 @@ namespace SpeechToTxtAI
             // Szybki check czy serwer faktycznie zyje (moze zginal od ostatniego razu).
             // NIE uzywamy .GetAwaiter().GetResult() - to blokowaloby watek UI i okno
             // by zamarzlo przy wolnym serwerze.
-            if (!await _mossService.IsServerReadyAsync())
+            try
             {
-                TxtStatus.Text = "Serwer nie odpowiada - probuje wstawic...";
-                BtnRecord.IsEnabled = false;
-                _serverReady = await _mossService.EnsureServerRunningAsync(maxWaitSeconds: 60);
-                BtnRecord.IsEnabled = true;
-                if (!_serverReady)
+                if (!await _mossService.IsServerReadyAsync(_windowLifetime.Token))
                 {
-                    TxtStatus.Text = "Serwer MOSS niedostepny";
-                    return;
+                    TxtStatus.Text = "Serwer nie odpowiada - probuje wstawic...";
+                    BtnRecord.IsEnabled = false;
+                    _serverReady = await _mossService.EnsureServerRunningAsync(maxWaitSeconds: 60, ct: _windowLifetime.Token);
+                    if (_closing) return;
+                    BtnRecord.IsEnabled = true;
+                    if (!_serverReady)
+                    {
+                        TxtStatus.Text = "Serwer MOSS niedostepny";
+                        return;
+                    }
                 }
             }
+            catch (OperationCanceledException) when (_closing)
+            {
+                return;
+            }
+
+            if (_closing) return;
 
             _isListening = true;
             BtnRecord.IsEnabled = true;   // pozwol zatrzymac (klikniecie = stop)
@@ -223,7 +239,7 @@ namespace SpeechToTxtAI
             _waveIn.StartRecording();
         }
 
-        private void StopListening()
+        private void StopListening(bool flushRemaining = true)
         {
             _isListening = false;
             IconMic.Visibility = Visibility.Visible;
@@ -233,10 +249,12 @@ namespace SpeechToTxtAI
             _waveIn?.StopRecording();
 
             // Wyslij resztki jesli byla mowa
-            if (_hasSpeech && _utterance.Count > MinUtteranceMs * SampleRate / 1000)
+            if (flushRemaining && _hasSpeech && _utterance.Count > MinUtteranceMs * SampleRate / 1000)
                 _ = FlushUtteranceAsync(_utterance.ToArray());
 
             CleanupRecording();
+
+            if (!flushRemaining) return;
 
             DispatcherQueue.TryEnqueue(() =>
             {
@@ -324,7 +342,9 @@ namespace SpeechToTxtAI
             try
             {
                 DispatcherQueue.TryEnqueue(() => TxtStatus.Text = "Rozpoznaje...");
-                var result = await _mossService.TranscribeSamplesAsync(samples, SampleRate);
+                var result = await _mossService.TranscribeSamplesAsync(samples, SampleRate, ct: _windowLifetime.Token);
+
+                if (_closing) return;
 
                 if (result.Ok && result.Segments.Count > 0)
                 {
@@ -338,6 +358,32 @@ namespace SpeechToTxtAI
                             {
                                 ClearTranscript();
                                 TxtStatus.Text = _isListening ? "Słucham... (wyczyszczone)" : "Zatrzymano";
+                            });
+                        }
+                        else if (text.Contains("wklej", StringComparison.OrdinalIgnoreCase))
+                        {
+                            DispatcherQueue.TryEnqueue(() =>
+                            {
+                                if (string.IsNullOrWhiteSpace(_fullTranscript))
+                                {
+                                    TxtStatus.Text = "Brak tekstu do wklejenia.";
+                                    return;
+                                }
+
+                                if (!CopyToClipboard(_fullTranscript))
+                                {
+                                    TxtStatus.Text = "Nie udało się skopiować tekstu do schowka.";
+                                    return;
+                                }
+
+                                if (!SendCtrlV())
+                                {
+                                    TxtStatus.Text = "Nie udało się wysłać skrótu Ctrl+V.";
+                                    return;
+                                }
+
+                                ClearTranscript(clearClipboard: false);
+                                TxtStatus.Text = _isListening ? "Słucham... (wklejono)" : "Zatrzymano";
                             });
                         }
                         else
@@ -376,8 +422,12 @@ namespace SpeechToTxtAI
                         TxtStatus.Text = _isListening ? $"Słucham... ({msg})" : "Zatrzymano");
                 }
             }
+            catch (OperationCanceledException) when (_closing)
+            {
+            }
             catch (Exception ex)
             {
+                if (_closing) return;
                 // Serwer mogl nie odpowiedziec (timeout/zamkniety) - nie wieszaj apki.
                 DispatcherQueue.TryEnqueue(() =>
                 {
@@ -391,26 +441,90 @@ namespace SpeechToTxtAI
             }
         }
 
-        private void CopyToClipboard(string text)
+        private bool CopyToClipboard(string text)
         {
             try
             {
                 var dataPackage = new DataPackage();
                 dataPackage.SetText(text);
                 Clipboard.SetContent(dataPackage);
+                Clipboard.Flush();
+                return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Schowek: {ex.Message}");
+                return false;
             }
         }
 
-        // Czysci transkrypcje na ekranie oraz schowek systemowy.
-        private void ClearTranscript()
+        private static bool SendCtrlV()
+        {
+            const uint inputKeyboard = 1;
+            const uint keyUp = 0x0002;
+            const ushort virtualKeyControl = 0x11;
+            const ushort virtualKeyV = 0x56;
+
+            var inputs = new[]
+            {
+                new INPUT { Type = inputKeyboard, Data = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = virtualKeyControl } } },
+                new INPUT { Type = inputKeyboard, Data = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = virtualKeyV } } },
+                new INPUT { Type = inputKeyboard, Data = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = virtualKeyV, Flags = keyUp } } },
+                new INPUT { Type = inputKeyboard, Data = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = virtualKeyControl, Flags = keyUp } } }
+            };
+
+            return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == inputs.Length;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint SendInput(uint numberOfInputs, INPUT[] inputs, int sizeOfInput);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct INPUT
+        {
+            public uint Type;
+            public InputUnion Data;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct InputUnion
+        {
+            [FieldOffset(0)]
+            public KEYBDINPUT Keyboard;
+
+            [FieldOffset(0)]
+            public MOUSEINPUT Mouse;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct KEYBDINPUT
+        {
+            public ushort VirtualKey;
+            public ushort ScanCode;
+            public uint Flags;
+            public uint Time;
+            public IntPtr ExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MOUSEINPUT
+        {
+            public int Dx;
+            public int Dy;
+            public uint MouseData;
+            public uint Flags;
+            public uint Time;
+            public IntPtr ExtraInfo;
+        }
+
+        // Czysci transkrypcje na ekranie i opcjonalnie schowek systemowy.
+        private void ClearTranscript(bool clearClipboard = true)
         {
             _fullTranscript = "";
             TxtResult.Text = "";
             BtnCopy.Visibility = Visibility.Collapsed;
+            if (!clearClipboard) return;
+
             try
             {
                 // Wyczysc schowek (pusty pakiet danych).

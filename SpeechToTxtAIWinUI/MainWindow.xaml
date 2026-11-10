@@ -10,9 +10,6 @@
     Title="Voice Recorder">
 
     <Grid Padding="12" Background="Transparent" >
-        <Grid.KeyboardAccelerators>
-            <KeyboardAccelerator Key="V" Modifiers="Control" Invoked="ClearAccelerator_Invoked"/>
-        </Grid.KeyboardAccelerators>
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Background="Transparent" Spacing="12">
             
             <!-- Circular Record Button -->
