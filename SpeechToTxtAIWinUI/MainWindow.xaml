@@ -40,6 +40,11 @@
                        HorizontalAlignment="Center"
                        FontSize="12"
                        Opacity="0.7"/>
+
+            <TextBlock Text="Komendy głosowe: „wyczyść”, „wklej”"
+                       HorizontalAlignment="Center"
+                       FontSize="12"
+                       Opacity="0.7"/>
             
             <!-- Result text area -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
