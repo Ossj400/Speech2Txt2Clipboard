@@ -57,6 +57,12 @@ WinUI wymaga jawnej platformy (nie AnyCPU):
 dotnet build SpeechToTxtWInUI.csproj -c Debug -p:Platform=x64 -r win-x64 --self-contained
 ```
 
+W konfiguracji Release przycinanie bibliotek (`PublishTrimmed`) i kompilacja
+ReadyToRun (`PublishReadyToRun`) są wyłączone, aby umożliwić publikację także
+bez dołączania środowiska .NET (framework-dependent).
+Na komputerze docelowym potrzebne są wtedy odpowiednie środowiska .NET i Windows
+App SDK. Serwer MOSS i jego model nadal wymagają osobnej instalacji.
+
 ---
 
 ## Struktura integracji MOSS
